@@ -1,0 +1,163 @@
+---
+title: "PCAPDroid File Analysis"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+---
+<style>
+.main-container {
+    margin-left:15%;
+    font-size: 15px;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+## Overview
+
+The data collected includes: `IP Protocol`, `Source IP`, `Source Port`, `Destination IP`, `Destination Port`, `Bytes Sent`, `Bytes Received`, `First Seen`, `Last Seen`.
+
+```{r}
+library(readr)
+data <- read_csv("OnePlus 5T.csv")
+data$FirstSeen = as.POSIXct(data$FirstSeen/1000.0, origin="1970-01-01")
+data$LastSeen = as.POSIXct(data$LastSeen/1000.0, origin="1970-01-01")
+knitr::kable(data[1:5,], caption = "An Overview of the Traffic Information Collected")
+print(nrow(data))
+print(min(data$FirstSeen))
+print(max(data$LastSeen))
+print(sum(data$BytesSent))
+print(sum(data$BytesRcvd))
+```
+
+## Summary Plots
+
+
+```{r}
+library(dplyr)
+byapp = data %>% 
+  count(App) %>%
+  arrange(desc(n))
+chart_data = byapp[1:10, ]
+chart_data[11, 1] = "Others"
+chart_data[11, 2] = sum(byapp$n[11:nrow(byapp)])
+pie(chart_data$n, labels = chart_data$App, radius = 1, main = "Connection Distribution by App", 
+    clockwise = TRUE, rotatelabel = TRUE)
+```
+```{r}
+library(dplyr)
+
+bytessentbyapp = aggregate(data$BytesSent, by=list(Category=data$App), FUN=sum) %>%
+  arrange(desc(x))
+
+bytesrcvdbyapp = aggregate(data$BytesRcvd, by=list(Category=data$App), FUN=sum) %>%
+  arrange(desc(x))
+
+barplot(height = bytessentbyapp$x, 
+        ylab = "Bytes Sent", 
+        main = "Bytes Sent Distribution by App", 
+        names.arg = byapp$App, las = 2, 
+        col = "#187bcd")
+
+barplot(height = bytesrcvdbyapp$x, 
+        ylab = "Bytes Received", 
+        main = "Bytes Received Distribution by App", 
+        names.arg = byapp$App, las = 2, 
+        col = "#cc1100")
+```
+
+```{r}
+library(dplyr)
+byproto = data %>% 
+  count(Proto) %>%
+  arrange(desc(n))
+chart_data = byproto[1:5,]
+chart_data[6, 1] = "Others"
+chart_data[6, 2] = sum(byapp$n[6:nrow(byproto)])
+pie(chart_data$n, labels = chart_data$Proto, radius = 1, main = "Connection Distribution by Protocol", 
+    clockwise = TRUE, rotatelabel = TRUE)
+```
+```{r}
+library(lubridate)
+connection_freq = data %>%
+  group_by(Date=floor_date(data$FirstSeen, "1 hour")) %>%
+  summarize(Connections = n(), `Bytes Sent` = sum(BytesSent), `Bytes Received` = sum(BytesRcvd))
+
+plot(connection_freq$Connections, type = "o", col = "darkgreen",
+     xaxt = "n", xlab='Date and Time', ylab = "No. of Connections", 
+     main = "No. of Connections over Time (Hourly)")
+axis(1, at=1:nrow(connection_freq), labels=connection_freq$Date)
+
+
+plot(connection_freq$`Bytes Sent`, type = "o", col = "red",
+     xaxt = "n", xlab='Date and Time', ylab = "Bytes Sent", 
+     main = "Bytes Sent over Time (Hourly)")
+axis(1, at=1:nrow(connection_freq), labels=connection_freq$Date)
+
+plot(connection_freq$`Bytes Received`, type = "o", col = "blue",
+     xaxt = "n", xlab='Date and Time', ylab = "Bytes Received", 
+     main = "Bytes Received over Time (Hourly)")
+axis(1, at=1:nrow(connection_freq), labels=connection_freq$Date)
+```
+
+## App-Specifics
+
+```{r}
+library(dplyr)
+app_freq = data %>%
+  group_by(App) %>%
+  summarize(Connections = n(), `Bytes Sent` = sum(BytesSent), `Bytes Received` = sum(BytesRcvd))
+
+max_conns = app_freq %>%
+  filter(Connections == max(app_freq$Connections)) %>%
+  pull(App)
+if(length(max_conns)>1){
+  max_conns = paste(max_conns, collapse=", ")
+}
+min_conns = app_freq %>%
+  filter(Connections == min(app_freq$Connections)) %>%
+  pull(App)
+if(length(min_conns)>1){
+  min_conns = paste(min_conns, collapse=", ")
+}
+
+max_datasent = app_freq %>%
+  filter(`Bytes Sent` == max(app_freq$`Bytes Sent`)) %>%
+  pull(App)
+if(length(max_datasent)>1){
+  max_datasent = paste(max_datasent, collapse=", ")
+}
+min_datasent = app_freq %>%
+  filter(`Bytes Sent` == min(app_freq$`Bytes Sent`)) %>%
+  pull(App)
+if(length(min_datasent)>1){
+  min_datasent = paste(min_datasent, collapse=", ")
+}
+
+max_datarcvd = app_freq %>%
+  filter(`Bytes Received` == max(app_freq$`Bytes Received`)) %>%
+  pull(App)
+if(length(max_datarcvd)>1){
+  max_datarcvd = paste(max_datarcvd, collapse=", ")
+}
+min_datarcvd = app_freq %>%
+  filter(`Bytes Received` == min(app_freq$`Bytes Received`)) %>%
+  pull(App)
+if(length(min_datarcvd)>1){
+  min_datarcvd = paste(min_datarcvd, collapse=", ")
+}
+
+app_stats = data.frame(Statistic = c("Max. No. of Connections", "Max. Data Sent", "Max. Data Received", 
+                                     "Min. No. of Connections", "Min. Data Sent", "Min. Data Received"), 
+                       App = c(max_conns, max_datasent, max_datarcvd, min_conns[1], min_datasent, min_datarcvd))
+
+knitr::kable(app_stats, caption = "App-wise Activity Statistics")
+```
+
+
+
